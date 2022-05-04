@@ -26,7 +26,7 @@ function myoverdub(ctx::TimeCtx, args...)
 
     if haskey(CACHE, args) && true
         call = CACHE[args]
-        if checkintegrity(call.reflection)
+        if checkhash(call)
             println("found cache $args")
             return call.result
         else
@@ -55,18 +55,37 @@ function MethodCall(ctx, args)
 
     ctx.metadata.cached[1] += newctx.metadata.cached[1]
 
-    if time - ctx.metadata.cached[1] > 0.1
+    if time - ctx.metadata.cached[1] > 0
         println("adding to cache ", call.args[1])
+        storehash!(call)
         @show ctx.metadata.cached[1] = time
-        call.reflection = Set(Cassette.reflect.(deps))
         push!(CACHE, (call.args)=>call)
     end
 
     return result
 end
 
+function storehash!(call)
+    call.reflection = Set(Cassette.reflect.(call.history))
+end
+
+function checkhash(call)
+    #checkintegrity(call.reflection)
+    checkworld(call)
+end
+
+function checkworld(call)
+    all(call.reflection) do ref
+        old = ref.method    
+        new = which(ref.signature)
+        new.primary_world == old.primary_world
+    end
+end
+
 Meta() = (; deps=Set{Tuple}(), cached=[0.])
 Meta(args) = (; deps=Set{Tuple}((typeof.(args), )), cached=[0.])
+
+global CACHE = Dict()
 
 f(x) = test1(x)
 function test()
