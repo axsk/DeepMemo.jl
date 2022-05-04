@@ -1,5 +1,6 @@
 name = "DeepMemo"
 uuid = "6612a837-a53f-4861-a7e8-420519cd253a"
+version = "0.1.0"
 
 [deps]
 Cassette = "7057c7e9-c182-5462-911a-8362d720325c"
