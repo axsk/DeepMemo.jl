@@ -1,3 +1,5 @@
+module DeepMemo
+
 using Cassette
 
 Cassette.@context TimeCtx
@@ -12,18 +14,37 @@ end
 
 CACHE = Dict()
 
+BLACKLIST = [Base, Core]
+MODS = []
+
+function inblacklist(mod)
+    x = 0
+    while mod != Main
+
+        if mod in BLACKLIST
+            return true
+        end
+        push!(MODS, mod)
+        modn = parentmodule(mod)
+        modn == mod && return false
+        mod = modn
+    end
+end
+
+
 @generated function Cassette.overdub(ctx::TimeCtx, args...)
     reflection = Cassette.reflect(args)
-    if isa(reflection, Cassette.Reflection)     
-        if reflection.method.module == Main
+    if isa(reflection, Cassette.Reflection)
+        if ! inblacklist(reflection.method.module)
             return :(myoverdub(ctx, args...))
         end
     end
-    return :(Cassette.fallback(ctx, args...))
+    return :(Cassette.recurse(ctx, args...))
 end
 
 function myoverdub(ctx::TimeCtx, args...)
 
+    CACHE::Dict
     if haskey(CACHE, args) && true
         call = CACHE[args]
         if checkhash(call)
@@ -34,7 +55,7 @@ function myoverdub(ctx::TimeCtx, args...)
             delete!(CACHE, args)
         end
     end
-    
+
     if Cassette.canrecurse(ctx, args...)
         return MethodCall(ctx, args)
     else
@@ -55,10 +76,10 @@ function MethodCall(ctx, args)
 
     ctx.metadata.cached[1] += newctx.metadata.cached[1]
 
-    if time - ctx.metadata.cached[1] > 0
-        println("adding to cache ", call.args[1])
+    if time - ctx.metadata.cached[1] >= -100
+        #println("adding to cache ", call.args)
         storehash!(call)
-        @show ctx.metadata.cached[1] = time
+        ctx.metadata.cached[1] = time
         push!(CACHE, (call.args)=>call)
     end
 
@@ -66,26 +87,27 @@ function MethodCall(ctx, args)
 end
 
 function storehash!(call)
-    call.reflection = Set(Cassette.reflect.(call.history))
+    call.reflection = [(sig, which(sig)) for sig in call.history]
 end
 
 function checkhash(call)
-    #checkintegrity(call.reflection)
     checkworld(call)
 end
 
 function checkworld(call)
-    all(call.reflection) do ref
-        old = ref.method    
-        new = which(ref.signature)
+    all(call.reflection) do (sig, meth)
+        old = meth
+        new = which(sig)
         new.primary_world == old.primary_world
     end
 end
 
-Meta() = (; deps=Set{Tuple}(), cached=[0.])
-Meta(args) = (; deps=Set{Tuple}((typeof.(args), )), cached=[0.])
+Meta() = (; deps=Set{Type}(), cached=[0.])
+Meta(args) = (; deps=Set{Type}((typeof(args), )), cached=[0.])
 
 global CACHE = Dict()
+
+reset() = global CACHE=Dict()
 
 f(x) = test1(x)
 function test()
@@ -93,7 +115,7 @@ function test()
     trace = Meta()
     res = Cassette.overdub(TimeCtx(metadata = Meta()), f, collect(1:3))
     res = Cassette.overdub(TimeCtx(metadata = Meta()), f, 4)
-    res = Cassette.overdub(TimeCtx(metadata = Meta()), f, 4)
+    res = Cassette.overdub(TimeCtx(metadata = Meta()), map, f, 1:5)
     res, trace
 end
 
@@ -120,3 +142,5 @@ function checkintegrity(history)
     end
     return true
 end
+
+end # module
